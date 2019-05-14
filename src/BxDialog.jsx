@@ -12,6 +12,7 @@ import TableBody from '@material-ui/core/TableBody';
 import TableCell from '@material-ui/core/TableCell';
 import TableRow from '@material-ui/core/TableRow';
 import BxEntityLink from './BxEntityLink';
+import YAML from 'yaml';
 
 const location = window.location.href;
 
@@ -41,54 +42,89 @@ class BxDialog extends React.Component {
       url = url + 'ent/' + value.id;
     }
 
-    let block_id = ((value.t === 'blk') && value.id) || (value.block && value.block.id) || '<pending>';
+    let block_id =
+      (value.t === 'blk' && value.id) ||
+      (value.block && value.block.id) ||
+      '<pending>';
 
     return (
-      <Dialog onClose={onClose} aria-labelledby="simple-dialog-title" fullWidth={true}
-              maxWidth={'lg'} {...other}>
+      <Dialog
+        onClose={onClose}
+        aria-labelledby="simple-dialog-title"
+        fullWidth={true}
+        maxWidth={'lg'}
+        {...other}
+      >
         <DialogTitle id="simple-dialog-title" title={JSON.stringify(value)}>
           {title} Detail
-          <IconButton aria-label="Close" className={classes.closeButton} onClick={onClose}>
-            <CloseIcon/>
+          <IconButton
+            aria-label="Close"
+            className={classes.closeButton}
+            onClick={onClose}
+          >
+            <CloseIcon />
           </IconButton>
         </DialogTitle>
         <Paper>
           <Table>
             <TableBody>
               <TableRow>
-                <TableCell component="th" scope="row">QR Code:</TableCell>
+                <TableCell component="th" scope="row">
+                  QR Code:
+                </TableCell>
                 <TableCell align="right" title={url}>
-                  <QRCode value={url} style={{width: '120px', height: '120px'}}/>
+                  <QRCode
+                    value={url}
+                    style={{width: '120px', height: '120px'}}
+                  />
                 </TableCell>
               </TableRow>
               {value.t === 'txn' && (
                 <TableRow>
-                  <TableCell component="th" scope="row">Transaction ID:</TableCell>
+                  <TableCell component="th" scope="row">
+                    Transaction ID:
+                  </TableCell>
                   <TableCell align="right" title={url}>
-                    <BxEntityLink txn={value.id}/>
+                    <BxEntityLink txn={value.id} />
                   </TableCell>
                 </TableRow>
               )}
               {value.t === 'txn' && (
                 <TableRow>
-                  <TableCell component="th" scope="row">Program ID:</TableCell>
+                  <TableCell component="th" scope="row">
+                    Program ID{value.data.instructions.length > 1 ? 's' : ''}:
+                  </TableCell>
                   <TableCell align="right">
-                    <BxEntityLink prg_id={value.data.instructions[0].program_id}/>
+                    {value.data.instructions.map((instruction, i) => (
+                      <div>
+                        <BxEntityLink prg_id={instruction.program_id} />{' '}
+                        {value.data.instructions.length > 1
+                          ? ` (instruction #${i})`
+                          : ''}
+                        <br />
+                      </div>
+                    ))}
                   </TableCell>
                 </TableRow>
               )}
               {value.t === 'txn' && (
                 <TableRow>
-                  <TableCell component="th" scope="row">Account ID(s):</TableCell>
+                  <TableCell component="th" scope="row">
+                    Account ID
+                    {value.data.instructions[0].keys.length > 1 ? 's' : ''}:
+                  </TableCell>
                   <TableCell align="right">
-                    {
-                      value.data.instructions[0].keys.map(key => (
+                    {value.data.instructions.map((instruction, i) => {
+                      return instruction.keys.map(key => (
                         <span key={key}>
-                          <BxEntityLink acct_id={key}/>
-                          <span> </span>
+                          <BxEntityLink acct_id={key} />
+                          {value.data.instructions.length > 1
+                            ? ` (instruction #${i})`
+                            : ''}
+                          <br />
                         </span>
-                      ))
-                    }
+                      ));
+                    })}
                   </TableCell>
                 </TableRow>
               )}
@@ -101,9 +137,11 @@ class BxDialog extends React.Component {
               {/*</TableRow>*/}
               {/*)}*/}
               <TableRow>
-                <TableCell component="th" scope="row">Block ID:</TableCell>
+                <TableCell component="th" scope="row">
+                  Block ID:
+                </TableCell>
                 <TableCell align="right" title={url}>
-                  <BxEntityLink blk={block_id}/>
+                  <BxEntityLink blk={block_id} />
                 </TableCell>
               </TableRow>
               {/*{value.t === 'blk' && (*/}
@@ -123,20 +161,44 @@ class BxDialog extends React.Component {
               {/*)}*/}
               {rows.map(row => (
                 <TableRow key={JSON.stringify(row)}>
-                  <TableCell component="th" scope="row">{row[0]}:</TableCell>
-                  <TableCell align="right" title={row[2]}>{row[1]}</TableCell>
+                  <TableCell component="th" scope="row">
+                    {row[0]}:
+                  </TableCell>
+                  <TableCell align="right" title={row[2]}>
+                    {row[1]}
+                  </TableCell>
                 </TableRow>
               ))}
               <TableRow>
-                <TableCell component="th" scope="row">Timestamp (approx):</TableCell>
+                <TableCell component="th" scope="row">
+                  Timestamp (approx):
+                </TableCell>
                 <TableCell align="right">
-                  <BxDateTime dateTime={value.dt} local/>
+                  <BxDateTime dateTime={value.dt} local />
                 </TableCell>
               </TableRow>
               <TableRow>
-                <TableCell component="th" scope="row" style={{verticalAlign:'top'}}>Raw Data:</TableCell>
-                <TableCell align="left" title={url} style={{fontFamily:'"Roboto Mono", monospace', whiteSpace:'pre'}}>
-                  {JSON.stringify(value, null, 2)}
+                <TableCell
+                  component="th"
+                  scope="row"
+                  style={{verticalAlign: 'top'}}
+                >
+                  Raw Data:
+                </TableCell>
+                <TableCell align="left" title={url}>
+                  <textarea
+                    readonly
+                    resize="none"
+                    wrap="off"
+                    rows="25"
+                    cols="120"
+                    style={{
+                      fontFamily: '"Roboto Mono", monospace',
+                      whiteSpace: 'pre',
+                    }}
+                  >
+                    {YAML.stringify(value, null, 2)}
+                  </textarea>
                 </TableCell>
               </TableRow>
             </TableBody>

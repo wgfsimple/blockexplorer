@@ -12,7 +12,8 @@ import RobustWebSocket from 'robust-websocket';
 import _ from 'lodash';
 import {matchPath, Route} from 'react-router';
 import './App.css';
-import createBrowserHistory from 'history/createBrowserHistory';
+import {createBrowserHistory} from 'history';
+import {Connection} from '@solana/web3.js';
 
 import EndpointConfig from './EndpointConfig';
 import BxDataTable from './BxDataTable';
@@ -20,7 +21,9 @@ import BxTransactionChart from './BxTransactionChart';
 import BxStatsTable from './BxStatsTable';
 import BxDialog from './BxDialog';
 import BxDialogTransactions from './BxDialogTransactions';
+import BxDialogWorldMap from './BxDialogWorldMap';
 import BxAppBar from './BxAppBar';
+import {sleep} from './sleep';
 
 const history = createBrowserHistory();
 
@@ -102,11 +105,35 @@ const styles = theme => ({
   },
 });
 
+async function geoip(ip: string) {
+  let lat = 11.6065;
+  let lng = 165.3768;
+
+  try {
+    const result = await window.fetch(
+      `http:${BLOCK_EXPLORER_API_BASE}/geoip/${ip}`,
+    );
+    if (result.status === 200) {
+      const json = await result.json();
+      lat = json[0];
+      lng = json[1];
+      console.log(ip, 'at', lat, lng);
+    }
+  } catch (err) {
+    console.log('geoip of', ip, 'failed with:', err);
+  }
+
+  // Add some Math.random() to prevent nodes in the same data center from fully
+  // overlaying each other
+  return [lat + Math.random() / 10 - 0.05, lng + Math.random() / 10 - 0.05];
+}
+
 const BLOCK_EXPLORER_API_BASE = EndpointConfig.BLOCK_EXPLORER_API_BASE;
 
 const BxAppBarThemed = withStyles(styles)(BxAppBar);
 const BxDialogThemed = withStyles(styles)(BxDialog);
 const BxDialogTransactionsThemed = withStyles(styles)(BxDialogTransactions);
+const BxDialogWorldMapThemed = withStyles(styles)(BxDialogWorldMap);
 const BxStatsTableThemed = withStyles(styles)(BxStatsTable);
 const BxTransactionChartThemed = withStyles(styles)(BxTransactionChart);
 const BxDataTableThemed = withStyles(styles)(BxDataTable);
@@ -129,6 +156,7 @@ class App extends Component {
     super(props);
 
     this.ws = null;
+    this.connection = new Connection(EndpointConfig.BLOCK_EXPLORER_RPC_URL);
 
     this.state = {
       enabled: true,
@@ -136,7 +164,13 @@ class App extends Component {
       selectedValue: null,
       currentMatch: null,
       stateLoading: false,
-      globalStats: {},
+      nodes: [],
+      globalStats: {
+        '!ent-last-leader': null,
+        '!blk-last-slot': 0,
+        '!txn-count': 0,
+        '!txn-per-sec-max': 0,
+      },
       txnStats: {},
       users: [],
       userState: {},
@@ -147,15 +181,7 @@ class App extends Component {
     const self = this;
 
     self.updateGlobalStats();
-    setInterval(() => {
-      self.updateGlobalStats();
-    }, 1200);
-
     self.updateTxnStats();
-    setInterval(() => {
-      self.updateTxnStats();
-    }, 22000);
-
     self.updateBlocks();
 
     self.updateTransactions();
@@ -201,11 +227,45 @@ class App extends Component {
     });
   }
 
-  updateGlobalStats() {
+  async updateGlobalStats() {
     this.getRemoteState(
       'globalStats',
       `http:${BLOCK_EXPLORER_API_BASE}/global-stats`,
     );
+
+    try {
+      const oldNodes = this.state.nodes;
+      const newNodes = await this.connection.getClusterNodes();
+      const nodes = [];
+
+      let modified = oldNodes.length !== newNodes.length;
+
+      const maybeSetState = () => {
+        if (modified) {
+          this.setState({nodes});
+          modified = false;
+        }
+      };
+      for (const newNode of newNodes) {
+        const oldNode = oldNodes.find(node => node.id === newNode.id);
+        if (oldNode) {
+          nodes.push(oldNode);
+        } else {
+          const ip = newNode.gossip.split(':')[0];
+          const [lat, lng] = await geoip(ip);
+          newNode.lat = lat;
+          newNode.lng = lng;
+          nodes.push(newNode);
+          modified = true;
+        }
+        maybeSetState();
+      }
+      maybeSetState();
+    } catch (err) {
+      console.log('getClusterNodes failed:', err.message);
+    }
+
+    setTimeout(() => this.updateGlobalStats(), 1200);
   }
 
   updateTxnStats() {
@@ -213,6 +273,7 @@ class App extends Component {
       'txnStats',
       `http:${BLOCK_EXPLORER_API_BASE}/txn-stats`,
     );
+    setTimeout(() => this.updateTxnStats(), 22000);
   }
 
   updateBlocks() {
@@ -247,21 +308,10 @@ class App extends Component {
       return;
     }
 
+    let self = this;
+
     let txnFun = v => {
-      let newObj = {};
-      let fields = v.split('#');
-
-      newObj.t = 'txn';
-      newObj.h = fields[0];
-      newObj.l = fields[1];
-      newObj.s = fields[2];
-      newObj.dt = fields[3];
-      newObj.entry_id = fields[4];
-      newObj.program_id = fields[5];
-      newObj.keys = fields[6].split(',');
-      newObj.id = fields[7];
-
-      return newObj;
+      return self.parseTransactionMessage(v);
     };
 
     this.getRemoteState(
@@ -379,6 +429,16 @@ class App extends Component {
   parseTransactionMessage(message) {
     let fields = message.split('#');
 
+    let instructions = _.map(fields[6].split('|'), i => {
+      let instParts = i.split('@');
+
+      return {
+        program_id: instParts[0],
+        keys: instParts[1].split(','),
+        data: instParts[2],
+      };
+    });
+
     return {
       t: 'txn',
       h: parseInt(fields[0]),
@@ -386,9 +446,8 @@ class App extends Component {
       s: parseInt(fields[2]),
       dt: fields[3],
       entry_id: fields[4],
-      program_id: fields[5],
-      keys: fields[6].split(','),
-      id: fields[7],
+      id: fields[5],
+      instructions,
     };
   }
 
@@ -456,6 +515,10 @@ class App extends Component {
     history.push('/');
   };
 
+  showMap = () => () => {
+    history.push(`/map`);
+  };
+
   toggleEnabled = self => event => {
     if (event.target.checked === self.state.enabled) {
       return;
@@ -509,7 +572,7 @@ class App extends Component {
 
     let url = mkUrl(value, type);
 
-    let updateState = newVal => {
+    let updateState = async newVal => {
       if (type === 'txns-by-prgid') {
         let msg = JSON.stringify({
           action: 'subscribe',
@@ -518,6 +581,13 @@ class App extends Component {
         });
 
         console.log('subscribe', msg);
+        while (self.ws.readyState !== WebSocket.OPEN) {
+          console.log(
+            'Waiting for ws.readyState to be OPEN (1): ',
+            self.ws.readyState,
+          );
+          await sleep(250);
+        }
         self.ws.send(msg);
 
         let txns = _(newVal)
@@ -546,17 +616,16 @@ class App extends Component {
 
     axios
       .get(url)
-      .then(response => {
-        updateState(response.data);
-      })
+      .then(response => updateState(response.data))
       .catch((resp, err) => {
-        console.log('oops', resp, err);
-        history.goBack();
+        console.error('oops', resp, err);
       });
   };
 
   render() {
     let self = this;
+
+    const leaderId = this.state.globalStats['!ent-last-leader'];
 
     return (
       <MuiThemeProvider theme={theme}>
@@ -566,8 +635,20 @@ class App extends Component {
               handleSearch={self.handleSearch(self)}
               enabled={this.state.enabled}
               handleSwitch={this.toggleEnabled(self)}
+              handleMap={this.showMap(self)}
             />
             <div>
+              <Route
+                path="/map"
+                render={() => (
+                  <BxDialogWorldMapThemed
+                    open={true}
+                    onClose={self.handleDialogClose}
+                    nodes={this.state.nodes}
+                    leaderId={leaderId}
+                  />
+                )}
+              />
               <Route
                 path="/txn/:id"
                 exact
@@ -614,7 +695,10 @@ class App extends Component {
               />
             </div>
             <p />
-            <BxStatsTableThemed globalStats={this.state.globalStats} />
+            <BxStatsTableThemed
+              globalStats={this.state.globalStats}
+              nodeCount={this.state.nodes.length}
+            />
             <p />
             <BxTransactionChartThemed txnStats={this.state.txnStats} />
             <p />

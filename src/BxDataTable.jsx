@@ -17,20 +17,24 @@ class BxDataTable extends React.Component {
 
     return (
       <Paper>
-        <Typography variant="h6" id="tableTitle" style={{textAlign: 'left', padding:"16px"}}>
+        <Typography
+          variant="h6"
+          id="tableTitle"
+          style={{textAlign: 'left', padding: '16px'}}
+        >
           Latest Blocks
-          <BxHelpLink text="Block" term="block"/>
+          <BxHelpLink text="Block" term="block" />
         </Typography>
         <Table>
           <TableHead>
             <TableRow>
               <TableCell>
                 Block ID
-                <BxHelpLink text="Block ID" term="block"/>
+                <BxHelpLink text="Block ID" term="block" />
               </TableCell>
               <TableCell align="center">
                 Block Height
-                <BxHelpLink text="Block Height" term="block-height"/>
+                <BxHelpLink text="Block Height" term="block-height" />
               </TableCell>
               <TableCell align="right">Timestamp (approx)</TableCell>
             </TableRow>
@@ -39,11 +43,11 @@ class BxDataTable extends React.Component {
             {_.map(dataItems, row => (
               <TableRow key={row.id}>
                 <TableCell component="th" scope="row">
-                  <BxEntityLink blk={row.id}/>
+                  <BxEntityLink blk={row.id} />
                 </TableCell>
                 <TableCell align="center">{row.s}</TableCell>
                 <TableCell align="right">
-                  <BxDateTime dateTime={row.dt} local/>
+                  <BxDateTime dateTime={row.dt} local />
                 </TableCell>
               </TableRow>
             ))}
@@ -56,12 +60,31 @@ class BxDataTable extends React.Component {
   renderTransactions() {
     const {dataItems, noTitle} = this.props;
 
+    let collectProgramIds = tx => {
+      return _.chain(tx.instructions)
+        .map(x => x.program_id)
+        .uniq()
+        .value();
+    };
+
+    let collectKeys = tx => {
+      return _.chain(tx.instructions)
+        .map(x => x.keys)
+        .flatten()
+        .uniq()
+        .value();
+    };
+
     return (
       <Paper>
         {!noTitle && (
-          <Typography variant="h6" id="tableTitle" style={{textAlign: 'left', padding:"16px"}}>
+          <Typography
+            variant="h6"
+            id="tableTitle"
+            style={{textAlign: 'left', padding: '16px'}}
+          >
             Transactions
-            <BxHelpLink text="Transaction" term="transaction"/>
+            <BxHelpLink text="Transaction" term="transaction" />
           </Typography>
         )}
         <Table>
@@ -70,20 +93,20 @@ class BxDataTable extends React.Component {
               <TableCell>
                 <div>
                   Transaction ID
-                  <BxHelpLink text="Transaction" term="transaction"/>
+                  <BxHelpLink text="Transaction" term="transaction" />
                 </div>
                 <div>
                   Account ID(s)
-                  <BxHelpLink text="Account" term="account"/>
+                  <BxHelpLink text="Account" term="account" />
                 </div>
               </TableCell>
               <TableCell>
-                Program ID
-                <BxHelpLink text="Program" term="program-id"/>
+                Program ID(s)
+                <BxHelpLink text="Program" term="program-id" />
               </TableCell>
               <TableCell align="center">
                 Block Height
-                <BxHelpLink text="Block Height" term="block-height"/>
+                <BxHelpLink text="Block Height" term="block-height" />
               </TableCell>
               <TableCell align="right">Timestamp (approx)</TableCell>
             </TableRow>
@@ -92,29 +115,32 @@ class BxDataTable extends React.Component {
             {_.map(dataItems, row => (
               <TableRow key={row.id}>
                 <TableCell component="th" scope="row">
-                  <BxEntityLink txn={row.id}/>
-                  <br/>
-                  {_.map(row.keys, key => (
+                  <BxEntityLink txn={row.id} />
+                  <br />
+                  {_.map(collectKeys(row), key => (
                     <span key={key}>
-                      <BxEntityLink acct_id={key}/>
+                      <BxEntityLink acct_id={key} />
                       <span> </span>
                     </span>
                   ))}
                 </TableCell>
-                <TableCell align="right" style={{verticalAlign:"middle"}}>
-                  <BxEntityLink prg_id={row.program_id}/>
-                  <br/>
-                  <span>&nbsp;</span> 
+                <TableCell align="right" style={{verticalAlign: 'middle'}}>
+                  {_.map(collectProgramIds(row), program_id => (
+                    <span key={program_id}>
+                      <BxEntityLink prg_id={program_id} />
+                      <br />
+                    </span>
+                  ))}
                 </TableCell>
                 <TableCell align="center">
                   {row.s}
-                  <br/>
-                  <span>&nbsp;</span> 
+                  <br />
+                  <span>&nbsp;</span>
                 </TableCell>
                 <TableCell align="right">
-                  <BxDateTime dateTime={row.dt} local/>
-                  <br/>
-                  <span>&nbsp;</span> 
+                  <BxDateTime dateTime={row.dt} local />
+                  <br />
+                  <span>&nbsp;</span>
                 </TableCell>
               </TableRow>
             ))}
